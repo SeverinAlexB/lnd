@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net"
@@ -167,6 +168,10 @@ type ListenerCfg struct {
 	// callback to register external REST subservers.
 	ExternalRestRegistrar RestRegistrar
 }
+
+var errStreamIsolationWithProxySkip = errors.New(
+	"while stream isolation is enabled, the TOR proxy may not be skipped",
+)
 
 // Main is the true entry point for lnd. It accepts a fully populated and
 // validated main configuration struct and an optional listener config struct.
@@ -752,10 +757,23 @@ func Main(cfg *Config, lisCfg ListenerCfg, interceptor signal.Interceptor) error
 		return err
 	}
 
+	if cfg.Tor.StreamIsolation && cfg.Tor.SkipProxyForClearNetTargets {
+		return errStreamIsolationWithProxySkip
+	}
+
 	if cfg.Tor.Active {
 		srvrLog.Infof("Proxying all network traffic via Tor "+
 			"(stream_isolation=%v)! NOTE: Ensure the backend node "+
 			"is proxying over Tor as well", cfg.Tor.StreamIsolation)
+
+		if cfg.Tor.SkipProxyForClearNetTargets {
+			srvrLog.Info("Onion services are accessible via Tor! NOTE: " +
+				"Traffic to clearnet services is not routed via Tor.")
+		} else {
+			srvrLog.Infof("Proxying all network traffic via Tor "+
+				"(stream_isolation=%v)! NOTE: Ensure the backend node "+
+				"is proxying over Tor as well", cfg.Tor.StreamIsolation)
+		}
 	}
 
 	// If the watchtower client should be active, open the client database.
